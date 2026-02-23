@@ -16,9 +16,11 @@ A tiny terminal widget that shows **live Claude Code usage stats** with an anima
 
   5h  ▓▓▓▓▓▓░░░░░░░░░░░░  32%
        resets in 2h 41m
+      ▓▓▓▓▓▓▓▓░░░░░░░░░░  🕐
 
   7d  ▓▓▓▓▓▓▓▓▓░░░░░░░░░  48%
        resets in 4d 11h
+      ▓▓▓▓░░░░░░░░░░░░░░  🕐
 
   ◈  1.2M  tokens this period
 
@@ -28,6 +30,8 @@ A tiny terminal widget that shows **live Claude Code usage stats** with an anima
 ## Features
 
 - Live 5-hour and 7-day usage bars with color-coded thresholds
+- Time-elapsed progress bars showing how far into each reset window you are
+- **Sessions view** — browse your local Claude Code sessions (`clu sessions`)
 - Animated creature that bounces every 60 seconds
 - Auto-discovers your Claude Code OAuth token (no setup needed)
 - Compact — fits in a narrow terminal split-pane
@@ -72,6 +76,12 @@ clu --token "sk-ant-..."
 
 # Or via python module
 python -m clu
+
+# Sessions view — browse local Claude Code sessions
+clu sessions
+
+# Sessions with custom refresh and limit
+clu sessions --refresh 5 --limit 20
 ```
 
 ## Token Resolution

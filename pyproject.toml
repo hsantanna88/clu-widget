@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clu-widget"
-version = "0.1.0"
+version = "0.2.0"
 description = "A tiny terminal widget showing live Claude Code usage stats with an animated creature"
 readme = "README.md"
 license = "MIT"
@@ -37,4 +37,5 @@ Repository = "https://github.com/hsantanna88/clu-widget"
 Issues = "https://github.com/hsantanna88/clu-widget/issues"
 
 [project.scripts]
-clu = "clu.widget:main"
+clu = "clu.__main__:cli"
+clu-sessions = "clu.sessions_widget:main"

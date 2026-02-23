@@ -10,7 +10,6 @@ import json
 import time
 import argparse
 import subprocess
-import atexit
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -22,155 +21,16 @@ except ImportError:
 
 from rich.console import Console
 from rich.live import Live
-from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
-from rich.columns import Columns
 from rich import box
-from rich.style import Style
-from rich.align import Align
-from rich.padding import Padding
-from rich.rule import Rule
 
-# ── Claude Code colour palette ────────────────────────────────────────────────
-AMBER   = "#d97706"
-AMBER_L = "#fbbf24"
-VIOLET  = "#a78bfa"
-CYAN    = "#67e8f9"
-MUTED   = "#6b7280"
-DIM     = "#374151"
-WHITE   = "#f3f4f6"
-GREEN   = "#34d399"
-ORANGE  = "#fb923c"
-RED     = "#f87171"
-SKIN    = "#c8866b"
-SKIN_D  = "#a0674e"
-
-# ── The creature ─────────────────────────────────────────────────────────────
-CREATURE_IDLE = [
-    [
-        f"          [{VIOLET}]*[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] │  │[/]",
-    ],
-]
-
-CREATURE_BOUNCE = [
-    [
-        f"",
-        f"          [{VIOLET}]*[/]",
-        f"        [{SKIN}]┌─╨──┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] ╘══╛[/]",
-    ],
-    [
-        f"          [{VIOLET}]*[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]^[/] [{VIOLET}]^[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"        [{SKIN}] ╱  ╲[/]",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]°[/] [{VIOLET}]°[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]![/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]⌒[/] [{VIOLET}]⌒[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]°[/] [{VIOLET}]°[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"",
-        f"          [{VIOLET}]*[/]",
-        f"        [{SKIN}]┌─╨──┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] ╘══╛[/]",
-    ],
-]
-
-BOUNCE_INTERVAL = 120
-BOUNCE_FRAME_HOLD = 3
-
-
-def get_creature_lines(tick):
-    """Return the creature lines for the current tick."""
-    cycle_pos = tick % BOUNCE_INTERVAL
-    bounce_total_ticks = len(CREATURE_BOUNCE) * BOUNCE_FRAME_HOLD
-
-    if cycle_pos < bounce_total_ticks:
-        frame_idx = cycle_pos // BOUNCE_FRAME_HOLD
-        return CREATURE_BOUNCE[frame_idx]
-    else:
-        return CREATURE_IDLE[0]
-
-
-def fmt_pct(v):
-    if v is None: return "—"
-    return f"{round(v)}%"
-
-
-def fmt_time_until(iso_str):
-    """Convert an ISO timestamp to a human-readable 'time until' string."""
-    if iso_str is None: return "—"
-    try:
-        target = datetime.fromisoformat(iso_str)
-        if target.tzinfo is None:
-            target = target.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        secs = max(0, int((target - now).total_seconds()))
-        h, remainder = divmod(secs, 3600)
-        m, s = divmod(remainder, 60)
-        if h > 0:   return f"{h}h {m:02d}m"
-        if m > 0:   return f"{m}m {s:02d}s"
-        return f"{s}s"
-    except Exception:
-        return "—"
-
-
-def fmt_tokens(n):
-    if n is None: return "—"
-    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
-    if n >= 1_000:     return f"{n/1_000:.1f}K"
-    return str(n)
-
-
-def bar(pct, width=18):
-    """Render a progress bar from a percentage (0-100). Returns a rich Text."""
-    if pct is None: pct = 0.0
-    ratio = min(max(pct / 100.0, 0.0), 1.0)
-    filled = round(ratio * width)
-    empty  = width - filled
-
-    if   ratio >= 0.90: color = RED
-    elif ratio >= 0.70: color = ORANGE
-    elif ratio >= 0.40: color = AMBER_L
-    else:               color = GREEN
-
-    t = Text()
-    t.append("▓" * filled, style=color)
-    t.append("░" * empty,  style=DIM)
-    return t
+from clu.common import (
+    AMBER, AMBER_L, VIOLET, CYAN, MUTED, DIM, WHITE, GREEN, ORANGE, RED,
+    WIDGET_COLS, WIDGET_ROWS,
+    get_creature_lines, _cleanup, _setup_terminal,
+    fmt_pct, fmt_time_until, fmt_tokens, bar, time_bar,
+)
 
 
 # ── Token resolution ──────────────────────────────────────────────────────────
@@ -274,8 +134,6 @@ def make_widget(data, last_ok, error_msg=None, tick=0, refresh_secs=30):
     for line in creature_lines:
         rows.append(Text.from_markup(line) if line else Text())
 
-    rows.append(Text())
-
     header = Text()
     header.append(f"  ◆ ", style=f"bold {AMBER}")
     header.append("claude", style=f"bold {WHITE}")
@@ -306,7 +164,6 @@ def make_widget(data, last_ok, error_msg=None, tick=0, refresh_secs=30):
             badge.append("  ")
             badge.append(f" {plan} ", style=f"bold {VIOLET} on #1e1b4b")
             rows.append(badge)
-            rows.append(Text())
 
         label_5h = Text()
         label_5h.append("  5h  ", style=f"bold {AMBER}")
@@ -321,6 +178,9 @@ def make_widget(data, last_ok, error_msg=None, tick=0, refresh_secs=30):
         else:
             reset_5h.append("—", style=CYAN)
         rows.append(reset_5h)
+        if isinstance(fh_reset, str):
+            rows.append(time_bar(fh_reset, 5 * 3600))
+
         rows.append(Text())
 
         label_7d = Text()
@@ -336,6 +196,8 @@ def make_widget(data, last_ok, error_msg=None, tick=0, refresh_secs=30):
         else:
             reset_7d.append("—", style=CYAN)
         rows.append(reset_7d)
+        if isinstance(sd_reset, str):
+            rows.append(time_bar(sd_reset, 7 * 86400))
 
         total = data.get("total_tokens") or data.get("totalTokens")
         if total:
@@ -366,40 +228,14 @@ def make_widget(data, last_ok, error_msg=None, tick=0, refresh_secs=30):
     return panel
 
 
-# ── Terminal helpers ──────────────────────────────────────────────────────────
-
-WIDGET_COLS = 46
-WIDGET_ROWS = 22
-
-
-def _cleanup():
-    """Restore terminal state on exit."""
-    sys.stdout.write("\033[?25h")   # show cursor
-    sys.stdout.write("\033[0m")     # reset colors
-    sys.stdout.flush()
-
-
-def _setup_terminal(resize=True):
-    """Clear screen, resize window, hide cursor, set title."""
-    atexit.register(_cleanup)
-    sys.stdout.write(f"\033]0;claude·usage\007")
-
-    if resize:
-        sys.stdout.write(f"\033[8;{WIDGET_ROWS};{WIDGET_COLS}t")
-
-    sys.stdout.write("\033[2J\033[H")
-    sys.stdout.write("\033[?25l")
-    sys.stdout.flush()
-
-
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description="Tiny Claude usage widget")
     parser.add_argument("--refresh", type=int, default=30, help="Refresh interval in seconds (default: 30)")
     parser.add_argument("--token",   type=str, default=None, help="Override OAuth token")
     parser.add_argument("--no-resize", action="store_true", help="Don't resize the terminal window")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     refresh_secs = args.refresh
     if args.token:

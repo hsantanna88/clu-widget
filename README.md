@@ -68,7 +68,7 @@ clu --token sk-ant-...
 |------|-------------|
 | `--dash` | Full-terminal dashboard with per-project stats |
 | `--data-dir PATH` | Additional `.claude` data directory (repeatable) |
-| `--refresh N` | API refresh interval in seconds (default: 30) |
+| `--refresh N` | API refresh interval in seconds (default: 60) |
 | `--no-resize` | Don't resize the terminal window |
 | `--token TOKEN` | Override OAuth token |
 
@@ -103,6 +103,16 @@ If you've used Claude Code at least once, it should just work.
 - `requests` - HTTP client
 
 ## Changelog
+
+### v2.1.0
+
+Mascot redesign and rate limit handling.
+
+- **New pixel-art mascot**: chunky background-colored sprite matching Claude Code's style — no more line-gap rendering artifacts
+- **Animated eyes**: mascot blinks with `^ ^` eyes periodically and during bounce animations
+- **Antenna**: cute violet `*|` antenna on top of the mascot
+- **429 rate limit handling**: respects `Retry-After` header from the API with exponential backoff
+- **Default refresh interval**: increased from 30s to 60s to reduce API rate limiting
 
 ### v2.0.0
 

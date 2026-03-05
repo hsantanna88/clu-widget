@@ -69,19 +69,33 @@ LIME    = "#a3e635"
 # Moods: chill (0-30%), cozy (30-50%), warm (50-70%), hot (70-90%), fire (90%+)
 
 def get_dash_creature(utilization, tick):
-    """Get a happy bouncy creature — always cheerful regardless of usage."""
+    """Get a happy bouncy creature — chunky pixel-art style."""
     bounce = (tick % 80) < 12  # bounce every 40 seconds
     frame = (tick % 80) // 3 if bounce else -1
 
+    # Background-colored spaces — no block chars, no line-gap stripes
+    ant  = f"      [{VIOLET}]*[/]"
+    stk  = f"      [{VIOLET}]|[/]"
+    top  = f"  [on {SKIN}]          [/]"
+    face  = f"  [on {SKIN}]  [/][on {DIM_D}] [{VIOLET} on {DIM_D}]*[/][on {DIM_D}]  [{VIOLET} on {DIM_D}]*[/][on {DIM_D}] [/][on {SKIN}]  [/]"
+    blink = f"  [on {SKIN}]  [/][on {DIM_D}] [{VIOLET} on {DIM_D}]^[/][on {DIM_D}]  [{VIOLET} on {DIM_D}]^[/][on {DIM_D}] [/][on {SKIN}]  [/]"
+    chin = f"  [on {SKIN}]          [/]"
+    body = f"   [on {SKIN}]        [/]"
+    legs = f"   [on {SKIN}]  [/]    [on {SKIN}]  [/]"
+
+    # Blink every ~10 seconds for 1 second
+    is_blink = (tick % 20) in (0, 1)
+    eyes = blink if is_blink else face
+
     if bounce and 0 <= frame < 4:
         frames = [
-            [f"",                f"   [{VIOLET}]*[/]",  f" [{SKIN}]┌─╨──┐[/]", f" [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]", f" [{SKIN}]└┬──┬┘[/]", f" [{SKIN}] ╘══╛[/]"],
-            [f"   [{VIOLET}]✱[/]", f"   [{VIOLET}]![/]", f" [{SKIN}]┌────┐[/]", f" [{SKIN}]│[/][{VIOLET}]^[/] [{VIOLET}]^[/][{SKIN}]│[/]", f" [{SKIN}]└────┘[/]", f" [{SKIN}] ╱  ╲[/]"],
-            [f"   [{VIOLET}]✱[/]", f"   [{VIOLET}]|[/]", f" [{SKIN}]┌────┐[/]", f" [{SKIN}]│[/][{VIOLET}]⌒[/] [{VIOLET}]⌒[/][{SKIN}]│[/]", f" [{SKIN}]└────┘[/]", f""],
-            [f"   [{VIOLET}]*[/]", f"   [{VIOLET}]|[/]", f" [{SKIN}]┌────┐[/]", f" [{SKIN}]│[/][{VIOLET}]⌒[/] [{VIOLET}]⌒[/][{SKIN}]│[/]", f" [{SKIN}]└┬──┬┘[/]", f" [{SKIN}] │  │[/]"],
+            [ant, stk, top, eyes, chin, body, legs],
+            [f"", ant, top, blink, chin, body, f""],
+            [ant, stk, top, blink, chin, body, f""],
+            [f"", ant, top, eyes, chin, body, legs],
         ]
         return frames[frame]
-    return [f"   [{VIOLET}]*[/]", f"   [{VIOLET}]|[/]",  f" [{SKIN}]┌────┐[/]", f" [{SKIN}]│[/][{VIOLET}]⌒[/] [{VIOLET}]⌒[/][{SKIN}]│[/]", f" [{SKIN}]└┬──┬┘[/]", f" [{SKIN}] │  │[/]"]
+    return [ant, stk, top, eyes, chin, body, legs]
 
 
 def get_creature_speech(utilization, tick):
@@ -96,66 +110,29 @@ def get_creature_speech(utilization, tick):
 
 
 # ── Original widget creature (wider spacing for 46-col widget) ───────────────
+# Background-colored spaces — no block chars, no line-gap stripes
+_W_ANT   = f"          [{VIOLET}]*[/]"
+_W_STK   = f"          [{VIOLET}]|[/]"
+_W_TOP   = f"      [on {SKIN}]          [/]"
+_W_FACE  = f"      [on {SKIN}]  [/][on {DIM_D}] [{VIOLET} on {DIM_D}]*[/][on {DIM_D}]  [{VIOLET} on {DIM_D}]*[/][on {DIM_D}] [/][on {SKIN}]  [/]"
+_W_BLINK = f"      [on {SKIN}]  [/][on {DIM_D}] [{VIOLET} on {DIM_D}]^[/][on {DIM_D}]  [{VIOLET} on {DIM_D}]^[/][on {DIM_D}] [/][on {SKIN}]  [/]"
+_W_CHIN  = f"      [on {SKIN}]          [/]"
+_W_BODY  = f"       [on {SKIN}]        [/]"
+_W_LEGS  = f"       [on {SKIN}]  [/]    [on {SKIN}]  [/]"
+
 CREATURE_IDLE_WIDGET = [
-    [
-        f"          [{VIOLET}]*[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] │  │[/]",
-    ],
+    [_W_ANT, _W_STK, _W_TOP, _W_FACE, _W_CHIN, _W_BODY, _W_LEGS],
+]
+
+CREATURE_BLINK_WIDGET = [
+    [_W_ANT, _W_STK, _W_TOP, _W_BLINK, _W_CHIN, _W_BODY, _W_LEGS],
 ]
 
 CREATURE_BOUNCE_WIDGET = [
-    [
-        f"",
-        f"          [{VIOLET}]*[/]",
-        f"        [{SKIN}]┌─╨──┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] ╘══╛[/]",
-    ],
-    [
-        f"          [{VIOLET}]*[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]^[/] [{VIOLET}]^[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"        [{SKIN}] ╱  ╲[/]",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]°[/] [{VIOLET}]°[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]![/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]⌒[/] [{VIOLET}]⌒[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"          [{VIOLET}]✱[/]",
-        f"          [{VIOLET}]|[/]",
-        f"        [{SKIN}]┌────┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]°[/] [{VIOLET}]°[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└────┘[/]",
-        f"",
-    ],
-    [
-        f"",
-        f"          [{VIOLET}]*[/]",
-        f"        [{SKIN}]┌─╨──┐[/]",
-        f"        [{SKIN}]│[/][{VIOLET}]▪[/] [{VIOLET}]▪[/][{SKIN}]│[/]",
-        f"        [{SKIN}]└┬──┬┘[/]",
-        f"        [{SKIN}] ╘══╛[/]",
-    ],
+    [_W_ANT, _W_STK, _W_TOP, _W_FACE,  _W_CHIN, _W_BODY, _W_LEGS],
+    [f"",    _W_ANT, _W_TOP, _W_BLINK, _W_CHIN, _W_BODY, f""],
+    [_W_ANT, _W_STK, _W_TOP, _W_BLINK, _W_CHIN, _W_BODY, f""],
+    [f"",    _W_ANT, _W_TOP, _W_FACE,  _W_CHIN, _W_BODY, _W_LEGS],
 ]
 
 BOUNCE_INTERVAL = 120
@@ -168,6 +145,9 @@ def get_creature_lines_widget(tick):
     if cycle_pos < bounce_total_ticks:
         frame_idx = cycle_pos // BOUNCE_FRAME_HOLD
         return CREATURE_BOUNCE_WIDGET[frame_idx]
+    # Blink every ~10 seconds for 1 second
+    elif (tick % 20) in (0, 1):
+        return CREATURE_BLINK_WIDGET[0]
     else:
         return CREATURE_IDLE_WIDGET[0]
 
@@ -534,6 +514,12 @@ def get_token():
 
 # ── API call ──────────────────────────────────────────────────────────────────
 
+class RateLimited(Exception):
+    """Raised on 429 with optional Retry-After seconds."""
+    def __init__(self, retry_after=None):
+        self.retry_after = retry_after
+        super().__init__(f"429 rate limited (retry after {retry_after}s)")
+
 def fetch_usage(token):
     """Hit Anthropic's oauth/usage endpoint. Returns dict or raises."""
     resp = requests.get(
@@ -544,6 +530,10 @@ def fetch_usage(token):
         },
         timeout=10,
     )
+    if resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+        secs = int(retry_after) if retry_after and retry_after.isdigit() else None
+        raise RateLimited(secs)
     resp.raise_for_status()
     return resp.json()
 
@@ -1278,7 +1268,7 @@ def _setup_terminal(dash=False):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-REFRESH_SECS = 30
+REFRESH_SECS = 60
 
 def main():
     global REFRESH_SECS
@@ -1348,6 +1338,7 @@ def main():
         local_data = parse_project_data(data_dirs)
         history = UsageHistory(max_samples=60)
         next_fetch = 0
+        backoff = REFRESH_SECS
         next_local_refresh = time.time() + 300
 
         with Live(
@@ -1365,8 +1356,14 @@ def main():
                         error_msg = None
                         last_ok   = datetime.now().strftime("%H:%M:%S")
                         next_fetch = now_ts + REFRESH_SECS
+                        backoff = REFRESH_SECS
                         # Record sample for live chart
                         history.record(api_data)
+                    except RateLimited as e:
+                        wait = e.retry_after or min(backoff * 2, 300)
+                        backoff = wait
+                        error_msg = f"rate limited (retry in {wait}s)"
+                        next_fetch = now_ts + wait
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"
                         next_fetch = now_ts + REFRESH_SECS
@@ -1396,6 +1393,7 @@ def main():
             sys.stdout.flush()
 
         next_fetch = 0
+        backoff = REFRESH_SECS
 
         with Live(make_widget(api_data, last_ok, error_msg, tick),
                   console=console,
@@ -1410,6 +1408,12 @@ def main():
                         error_msg = None
                         last_ok   = datetime.now().strftime("%H:%M:%S")
                         next_fetch = now_ts + REFRESH_SECS
+                        backoff = REFRESH_SECS
+                    except RateLimited as e:
+                        wait = e.retry_after or min(backoff * 2, 300)
+                        backoff = wait
+                        error_msg = f"rate limited (retry in {wait}s)"
+                        next_fetch = now_ts + wait
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"
                         next_fetch = now_ts + REFRESH_SECS

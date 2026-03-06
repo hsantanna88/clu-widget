@@ -98,8 +98,15 @@ def get_dash_creature(utilization, tick):
     return [ant, stk, top, eyes, chin, body, legs]
 
 
-def get_creature_speech(utilization, tick):
-    """Get a cheerful speech bubble — always positive vibes."""
+def get_creature_speech(utilization, tick, error_msg=None):
+    """Get a speech bubble — cheerful normally, concerned on errors."""
+    if error_msg:
+        sad_phrases = [
+            "ugh, hold on...", "not again~", "waiting...", "brb~",
+            "oops!", "one sec...", "hmm...", "hang tight~",
+        ]
+        idx = (tick // 20) % len(sad_phrases)
+        return sad_phrases[idx]
     phrases = [
         "let's go!", "vibing~", "all good!", "smooth sailing~",
         "doing great!", "feeling good!", "cruising along~", "no worries!",
@@ -548,38 +555,74 @@ _STRUCTURAL = {
 }
 
 def _extract_project_name(dir_name):
-    """Extract a meaningful, human-readable project name from a Claude project directory name.
+    """Extract project name from a Claude project directory name.
 
-    Directory names are full paths with '-' replacing '/', e.g.:
+    Directory names encode full paths with '-' replacing '/', e.g.:
       -Users-hsantanna-Work-Research-sis-employment
-    We strip the structural prefix (Users, username, Work, Research...)
-    and prettify the remaining tail: title-case words, uppercase short
-    acronyms (SIS, CLO), and convert hyphens to spaces.
+    Since '-' replaces both '/' and literal hyphens in folder names,
+    we walk the filesystem to reconstruct the real path and extract
+    the leaf folder name.
     """
-    # Split into segments (filter empties from leading -)
     parts = [p for p in dir_name.split("-") if p]
-
     if not parts:
         return dir_name
 
-    # Strip structural prefix segments + likely username (index 1 after "Users")
-    start = 0
-    has_users_prefix = parts[0].lower() == "users" and len(parts) >= 2
+    # Greedily reconstruct the path by checking the filesystem.
+    # At each hyphen, check if the accumulated string is a real directory.
+    # If so, treat the hyphen as a '/'. Otherwise, it's a literal '-'.
+    resolved = "/"
+    remaining = parts[:]
 
+    while remaining:
+        best = 0
+        for i in range(1, len(remaining) + 1):
+            candidate = resolved.rstrip("/") + "/" + "-".join(remaining[:i])
+            if Path(candidate).is_dir():
+                best = i
+
+        if best > 0:
+            resolved = resolved.rstrip("/") + "/" + "-".join(remaining[:best])
+            remaining = remaining[best:]
+        else:
+            break
+
+    if remaining:
+        # Filesystem resolved the parent but couldn't go deeper (stale path).
+        # Strip structural segments from remaining to get the leaf.
+        last_structural = -1
+        for i, part in enumerate(remaining):
+            if part.lower() in _STRUCTURAL:
+                last_structural = i
+        if last_structural >= 0 and last_structural < len(remaining) - 1:
+            remaining = remaining[last_structural + 1:]
+        return _prettify_name("-".join(remaining))
+
+    if resolved != "/":
+        # Entire path resolved on disk — use the actual leaf folder name
+        return _prettify_name(Path(resolved).name)
+
+    # Fallback for paths that no longer exist on disk:
+    # Strip all structural segments (from anywhere) + username, keep only
+    # the meaningful tail after the LAST structural segment.
+    has_users_prefix = parts[0].lower() == "users" and len(parts) >= 2
+    last_structural = -1
     for i, part in enumerate(parts):
         if part.lower() in _STRUCTURAL:
-            start = i + 1
-            continue
-        if has_users_prefix and i == 1:
-            start = i + 1
-            continue
-        break
+            last_structural = i
+        elif has_users_prefix and i == 1:
+            last_structural = i
 
-    tail = parts[start:] if start < len(parts) else [parts[-1]]
+    start = last_structural + 1 if last_structural >= 0 else 0
+    tail = parts[start:] if start < len(parts) else parts[-1:]
+    return _prettify_name("-".join(tail))
 
-    # Prettify each word: short words (<=3 chars) become UPPERCASE (likely
-    # acronyms like SIS, CLO, API), longer words get Title Case.
-    # Common short English words are excluded from the acronym rule.
+
+def _prettify_name(name):
+    """Prettify a folder name: title-case words, uppercase short acronyms."""
+    words = name.replace("-", " ").replace("_", " ").split()
+    if not words:
+        return name
+
     _COMMON_SHORT = {
         "a", "an", "and", "the", "of", "or", "in", "on", "to", "at",
         "for", "is", "it", "my", "by", "do", "if", "no", "so", "up",
@@ -589,20 +632,13 @@ def _extract_project_name(dir_name):
         "she", "too", "two", "use", "was", "way", "who", "why", "yet",
     }
     pretty = []
-    for word in tail:
+    for word in words:
         if len(word) <= 3 and word.lower() not in _COMMON_SHORT:
             pretty.append(word.upper())
         else:
             pretty.append(word.capitalize())
 
-    name = " ".join(pretty)
-
-    # Truncate to reasonable length for display (break at word boundary)
-    if len(name) > 20:
-        truncated = name[:20].rsplit(" ", 1)[0]
-        name = truncated if truncated else name[:20]
-
-    return name if name else parts[-1]
+    return " ".join(pretty)
 
 
 def parse_project_data(data_dirs):
@@ -779,12 +815,13 @@ def parse_project_data(data_dirs):
 
 # ── Dashboard rendering ──────────────────────────────────────────────────────
 
-def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_info, usage_history=None):
+def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_info, usage_history=None, window_hours=5):
     """Build the full dashboard layout — with personality."""
 
     now_str = datetime.now().strftime("%H:%M:%S")
     dot_char = "●" if not error_msg else "✕"
     dot_color = GREEN if not error_msg else RED
+    cutoff_5h = datetime.now(timezone.utc) - timedelta(hours=window_hours)
     totals = local_data.get("totals", {})
     daily = local_data.get("daily_tokens", {})
     models = local_data.get("models", {})
@@ -797,7 +834,7 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
 
     # ── HERO PANEL: Creature + Speech + Gauges ────────────────────────────
     creature_lines = get_dash_creature(fh_pct, tick)
-    speech = get_creature_speech(fh_pct, tick)
+    speech = get_creature_speech(fh_pct, tick, error_msg)
 
     hero_rows = []
     hero_rows.append(Text())
@@ -829,7 +866,7 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
             hero_rows.append(badge_row)
             hero_rows.append(Text())
 
-    # Big gauges
+    # Big gauges — show cached data even during errors
     if api_data:
         fh = api_data.get("five_hour") or api_data.get("fiveHour") or {}
         sd = api_data.get("seven_day") or api_data.get("sevenDay") or {}
@@ -848,6 +885,10 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
         hero_rows.append(big_bar(sd_pct_v, width=30, label="  7d"))
         sd_reset_iso = sd_reset if isinstance(sd_reset, str) else None
         hero_rows.append(time_bar(sd_reset_iso, window_secs=7*86400, width=30))
+
+        if error_msg:
+            hero_rows.append(Text())
+            hero_rows.append(Text(f"  {error_msg}", style=f"italic {RED}"))
     elif error_msg:
         hero_rows.append(Text(f"  {error_msg}", style=f"italic {RED}"))
         if last_ok:
@@ -997,7 +1038,9 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
     medals = ["◆", "◆", "◆", "◇", "◇", "○", "○", "○", "·", "·"]
     medal_colors = [YELLOW, AMBER_L, ORANGE, VIOLET, VIOLET, BLUE, BLUE, CYAN, MUTED, MUTED]
 
-    display_projects = local_data.get("projects", [])[:12]
+    all_projects = local_data.get("projects", [])
+    display_projects = [p for p in all_projects
+                        if p.get("last_ts") and p["last_ts"] >= cutoff_5h][:12]
     name_w = max((len(p["name"]) for p in display_projects), default=14)
     name_w = max(name_w, 8)  # minimum width
 
@@ -1035,7 +1078,7 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
         r.append(f" of limit", style=MUTED)
         proj_rows.append(r)
 
-    proj_subtitle_parts = [f"{totals.get('projects', 0)} local"]
+    proj_subtitle_parts = [f"{len(display_projects)} in last {window_hours}h"]
     if external_pct > 1:
         proj_subtitle_parts.append("+ external")
     proj_content = Text("\n").join(proj_rows)
@@ -1049,8 +1092,10 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
     )
 
     # ── SESSIONS PANEL ────────────────────────────────────────────────────
+    recent_sessions = [s for s in local_data.get("sessions", [])
+                       if s.get("last_ts") and s["last_ts"] >= cutoff_5h]
     sess_rows = []
-    for i, s in enumerate(local_data.get("sessions", [])[:8]):
+    for i, s in enumerate(recent_sessions[:8]):
         total_tok = s["input_tokens"] + s["output_tokens"] + s["cache_read"] + s["cache_create"]
         duration = "—"
         if s["first_ts"] and s["last_ts"]:
@@ -1061,8 +1106,10 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
         model_short = fmt_model(s.get("model", ""))
 
         r = Text()
-        # Active indicator for most recent
-        if i == 0:
+        # Active indicator if session had activity in last 5 minutes
+        now_utc = datetime.now(timezone.utc)
+        is_active = s.get("last_ts") and (now_utc - s["last_ts"]).total_seconds() < 300
+        if is_active:
             r.append(" ▸ ", style=f"bold {GREEN}")
         else:
             r.append("   ", style=MUTED)
@@ -1078,7 +1125,7 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
     sess_panel = Panel(
         sess_content,
         title=Text.from_markup(f"[bold {CYAN}]◉ sessions[/]"),
-        subtitle=Text.from_markup(f"[{MUTED}]{totals.get('sessions', 0)} total[/]"),
+        subtitle=Text.from_markup(f"[{MUTED}]{len(recent_sessions)} in last {window_hours}h[/]"),
         border_style=DIM,
         box=box.ROUNDED,
         padding=(1, 1),
@@ -1112,13 +1159,13 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
         Layout(name="bottom", ratio=5),
     )
     layout["top"].split_row(
-        Layout(hero_panel, name="hero", ratio=3),
-        Layout(stats_panel, name="stats", ratio=2),
+        Layout(hero_panel, name="hero", ratio=2),
+        Layout(stats_panel, name="stats", ratio=3),
     )
     if has_chart:
         layout["bottom"].split_row(
-            Layout(name="bottom_left", ratio=3),
-            Layout(name="bottom_right", ratio=2),
+            Layout(name="bottom_left", ratio=2),
+            Layout(name="bottom_right", ratio=3),
         )
         layout["bottom_left"].update(proj_panel)
         layout["bottom_right"].split_column(
@@ -1127,8 +1174,8 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
         )
     else:
         layout["bottom"].split_row(
-            Layout(proj_panel, name="projects", ratio=3),
-            Layout(sess_panel, name="sessions", ratio=2),
+            Layout(proj_panel, name="projects", ratio=2),
+            Layout(sess_panel, name="sessions", ratio=3),
         )
 
     return layout
@@ -1162,11 +1209,7 @@ def make_widget(data, last_ok, error_msg=None, tick=0):
     rows.append(header)
     rows.append(Text())
 
-    if error_msg:
-        rows.append(Text(f"  {error_msg}", style=f"italic {RED}"))
-        if last_ok:
-            rows.append(Text(f"  last ok  {last_ok}", style=MUTED))
-    elif data:
+    if data:
         fh = data.get("five_hour") or data.get("fiveHour") or {}
         sd = data.get("seven_day") or data.get("sevenDay") or {}
         plan = data.get("plan") or data.get("subscription_type") or ""
@@ -1221,6 +1264,13 @@ def make_widget(data, last_ok, error_msg=None, tick=0):
             tok_row.append("  tokens this period", style=MUTED)
             rows.append(tok_row)
 
+        if error_msg:
+            rows.append(Text())
+            rows.append(Text(f"  {error_msg}", style=f"italic {RED}"))
+    elif error_msg:
+        rows.append(Text(f"  {error_msg}", style=f"italic {RED}"))
+        if last_ok:
+            rows.append(Text(f"  last ok  {last_ok}", style=MUTED))
     else:
         rows.append(Text(f"  {spinning} fetching…", style=MUTED))
 
@@ -1289,6 +1339,8 @@ def main():
                         help="Override OAuth token")
     parser.add_argument("--no-resize", action="store_true",
                         help="Don't resize the terminal window")
+    parser.add_argument("--window", type=int, default=5, choices=[5, 15, 24],
+                        help="Time window in hours for sessions/projects (default: 5)")
     parser.add_argument("--data-dir", type=str, action="append", default=None,
                         help="Additional .claude data directory (e.g. synced from HPC). "
                              "Can be specified multiple times.")
@@ -1348,7 +1400,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
         next_local_refresh = time.time() + 300
 
         with Live(
-            make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_info, history),
+            make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_info, history, args.window),
             console=console,
             refresh_per_second=2,
             transient=False,
@@ -1366,10 +1418,10 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         # Record sample for live chart
                         history.record(api_data)
                     except RateLimited as e:
-                        wait = e.retry_after or min(backoff * 2, 300)
+                        wait = e.retry_after or min(backoff * 2, 120)
                         backoff = wait
-                        error_msg = f"rate limited (retry in {wait}s)"
                         next_fetch = now_ts + wait
+                        error_msg = "rate limited"
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"
                         next_fetch = now_ts + REFRESH_SECS
@@ -1377,12 +1429,21 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         error_msg = str(e)[:36]
                         next_fetch = now_ts + 10
 
+                # Live countdown for any pending retry
+                retry_secs = max(0, int(next_fetch - time.time()))
+                display_error = error_msg
+                if error_msg == "rate limited":
+                    if retry_secs > 0:
+                        display_error = f"rate limited (retry in {retry_secs}s)"
+                    else:
+                        display_error = None
+
                 if now_ts >= next_local_refresh:
                     local_data = parse_project_data(data_dirs)
                     next_local_refresh = now_ts + 300
 
                 live.update(make_dashboard(
-                    api_data, local_data, last_ok, error_msg, tick, data_dirs_info, history
+                    api_data, local_data, last_ok, display_error, tick, data_dirs_info, history, args.window
                 ))
                 tick += 1
                 time.sleep(0.5)
@@ -1416,10 +1477,10 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         next_fetch = now_ts + REFRESH_SECS
                         backoff = REFRESH_SECS
                     except RateLimited as e:
-                        wait = e.retry_after or min(backoff * 2, 300)
+                        wait = e.retry_after or min(backoff * 2, 120)
                         backoff = wait
-                        error_msg = f"rate limited (retry in {wait}s)"
                         next_fetch = now_ts + wait
+                        error_msg = "rate limited"
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"
                         next_fetch = now_ts + REFRESH_SECS
@@ -1427,7 +1488,16 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         error_msg = str(e)[:36]
                         next_fetch = now_ts + 10
 
-                live.update(make_widget(api_data, last_ok, error_msg, tick))
+                # Live countdown for any pending retry
+                retry_secs = max(0, int(next_fetch - time.time()))
+                display_error = error_msg
+                if error_msg == "rate limited":
+                    if retry_secs > 0:
+                        display_error = f"rate limited (retry in {retry_secs}s)"
+                    else:
+                        display_error = None
+
+                live.update(make_widget(api_data, last_ok, display_error, tick))
                 tick += 1
                 time.sleep(0.5)
 

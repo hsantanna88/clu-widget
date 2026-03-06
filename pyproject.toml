@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clu-widget"
-version = "2.1.1"
+version = "2.2.0"
 description = "Claude Usage Monitor — terminal widget and dashboard for tracking Claude Code usage"
 readme = "README.md"
 license = "MIT"

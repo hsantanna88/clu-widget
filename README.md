@@ -70,6 +70,7 @@ clu --token sk-ant-...
 | `--dash` | Full-terminal dashboard with per-project stats |
 | `--data-dir PATH` | Additional `.claude` data directory (repeatable) |
 | `--refresh N` | API refresh interval in seconds (default: 60) |
+| `--window N` | Time window for sessions/projects: 5, 15, or 24 hours (default: 5) |
 | `--no-resize` | Don't resize the terminal window |
 | `--token TOKEN` | Override OAuth token |
 
@@ -104,6 +105,19 @@ If you've used Claude Code at least once, it should just work.
 - `requests` - HTTP client
 
 ## Changelog
+
+### v2.2.0
+
+Dashboard UX improvements and smarter project naming.
+
+- **Live retry countdown**: rate limit errors now show a ticking countdown instead of a static message
+- **Cached data persists**: usage bars stay visible during API errors instead of being replaced by error text
+- **Softer backoff**: max retry capped at 120s (was 300s)
+- **Confused mascot**: creature reacts appropriately during errors ("ugh, hold on...", "waiting...")
+- **Time window filter**: sessions and projects panels filter to last 5h by default, configurable via `--window` (5, 15, or 24 hours)
+- **Smart project names**: filesystem-aware leaf folder detection — `bad-controls` becomes "Bad Controls" instead of "Professor Research Bad Controls"
+- **Better layout**: right panels (stats/sessions) get more horizontal space
+- **Active indicator**: green arrow only appears on sessions active in the last 5 minutes
 
 ### v2.1.1
 

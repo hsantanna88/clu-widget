@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-clu — Claude Usage Monitor 2.0
+clu — Claude Usage Monitor
 
 Widget mode (default):
     clu                          # cute animated widget
@@ -24,6 +24,12 @@ import atexit
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
+from importlib.metadata import version as _pkg_version
+
+try:
+    __version__ = _pkg_version("clu-widget")
+except Exception:
+    __version__ = "dev"
 
 try:
     import requests
@@ -901,7 +907,7 @@ def make_dashboard(api_data, local_data, last_ok, error_msg, tick, data_dirs_inf
     hero_panel = Panel(
         hero_content,
         title=Text.from_markup(
-            f"[bold {AMBER}]◆[/] [bold {WHITE}]clu[/] [bold {VIOLET}]2.0[/]"
+            f"[bold {AMBER}]◆[/] [bold {WHITE}]clu[/] [bold {VIOLET}]{__version__}[/]"
         ),
         border_style=VIOLET_D,
         box=box.ROUNDED,

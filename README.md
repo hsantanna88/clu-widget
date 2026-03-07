@@ -106,6 +106,10 @@ If you've used Claude Code at least once, it should just work.
 
 ## Changelog
 
+### v2.2.1
+
+Version display now reads from package metadata instead of being hardcoded.
+
 ### v2.2.0
 
 Dashboard UX improvements and smarter project naming.

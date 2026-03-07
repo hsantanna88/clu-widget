@@ -533,6 +533,30 @@ class RateLimited(Exception):
         self.retry_after = retry_after
         super().__init__(f"429 rate limited (retry after {retry_after}s)")
 
+_CACHE_FILE = Path.home() / ".claude" / ".clu_cache.json"
+
+def _load_cached_usage():
+    """Load last successful API response from disk cache."""
+    try:
+        if _CACHE_FILE.exists():
+            data = json.loads(_CACHE_FILE.read_text())
+            cached_at = data.get("_cached_at", 0)
+            # Only use cache if less than 5 minutes old
+            if time.time() - cached_at < 300:
+                return data
+    except Exception:
+        pass
+    return None
+
+def _save_cached_usage(data):
+    """Save API response to disk cache."""
+    try:
+        cache = dict(data)
+        cache["_cached_at"] = time.time()
+        _CACHE_FILE.write_text(json.dumps(cache))
+    except Exception:
+        pass
+
 def fetch_usage(token):
     """Hit Anthropic's oauth/usage endpoint. Returns dict or raises."""
     resp = requests.get(
@@ -548,7 +572,9 @@ def fetch_usage(token):
         secs = int(retry_after) if retry_after and retry_after.isdigit() else None
         raise RateLimited(secs)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    _save_cached_usage(data)
+    return data
 
 
 # ── JSONL Project Data Parser ────────────────────────────────────────────────
@@ -1339,8 +1365,8 @@ def main():
     )
     parser.add_argument("--dash", action="store_true",
                         help="Full-terminal dashboard with per-project stats")
-    parser.add_argument("--refresh", type=int, default=30,
-                        help="API refresh interval in seconds (default: 30)")
+    parser.add_argument("--refresh", type=int, default=60,
+                        help="API refresh interval in seconds (default: 60)")
     parser.add_argument("--token", type=str, default=None,
                         help="Override OAuth token")
     parser.add_argument("--no-resize", action="store_true",
@@ -1368,8 +1394,9 @@ def main():
                 print(f"Warning: data directory not found: {d}")
 
     token = get_token()
-    api_data  = None
-    last_ok   = None
+    cached = _load_cached_usage()
+    api_data  = cached
+    last_ok   = "cached" if cached else None
     error_msg = None
     tick      = 0
 
@@ -1394,6 +1421,15 @@ def main():
     except KeyboardInterrupt:
         _cleanup()
 
+def _initial_fetch_time(api_data):
+    """If we have cached data, delay first fetch to avoid 429."""
+    if api_data and api_data.get("_cached_at"):
+        elapsed = time.time() - api_data["_cached_at"]
+        remaining = max(0, REFRESH_SECS - elapsed)
+        if remaining > 0:
+            return time.time() + remaining
+    return 0
+
 def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_dirs_info):
     if args.dash:
         _setup_terminal(dash=True)
@@ -1401,7 +1437,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
 
         local_data = parse_project_data(data_dirs)
         history = UsageHistory(max_samples=60)
-        next_fetch = 0
+        next_fetch = _initial_fetch_time(api_data)
         backoff = 5
         next_local_refresh = time.time() + 300
 
@@ -1465,7 +1501,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
             sys.stdout.write(f"\033]0;claude·usage\007")
             sys.stdout.flush()
 
-        next_fetch = 0
+        next_fetch = _initial_fetch_time(api_data)
         backoff = 5
 
         with Live(make_widget(api_data, last_ok, error_msg, tick),

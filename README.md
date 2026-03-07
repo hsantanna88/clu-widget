@@ -106,6 +106,10 @@ If you've used Claude Code at least once, it should just work.
 
 ## Changelog
 
+### v2.2.3
+
+Fix default refresh interval (was 30s, now 60s as documented). Cache last API response to disk so restarts show data immediately and avoid unnecessary 429s.
+
 ### v2.2.2
 
 Faster cold-start recovery — first rate-limit retry is now 10s instead of 60-120s.

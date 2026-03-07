@@ -1402,7 +1402,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
         local_data = parse_project_data(data_dirs)
         history = UsageHistory(max_samples=60)
         next_fetch = 0
-        backoff = REFRESH_SECS
+        backoff = 5
         next_local_refresh = time.time() + 300
 
         with Live(
@@ -1466,7 +1466,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
             sys.stdout.flush()
 
         next_fetch = 0
-        backoff = REFRESH_SECS
+        backoff = 5
 
         with Live(make_widget(api_data, last_ok, error_msg, tick),
                   console=console,

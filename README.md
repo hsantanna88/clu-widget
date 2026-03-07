@@ -106,6 +106,10 @@ If you've used Claude Code at least once, it should just work.
 
 ## Changelog
 
+### v2.2.2
+
+Faster cold-start recovery — first rate-limit retry is now 10s instead of 60-120s.
+
 ### v2.2.1
 
 Version display now reads from package metadata instead of being hardcoded.

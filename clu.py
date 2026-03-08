@@ -4,7 +4,7 @@ clu — Claude Usage Monitor
 
 Widget mode (default):
     clu                          # cute animated widget
-    clu --refresh 60             # custom refresh interval
+    clu --refresh 90             # custom refresh interval
 
 Dashboard mode:
     clu --dash                   # full-terminal dashboard
@@ -1350,7 +1350,7 @@ def _setup_terminal(dash=False):
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
-REFRESH_SECS = 60
+REFRESH_SECS = 90
 
 def main():
     global REFRESH_SECS
@@ -1365,8 +1365,8 @@ def main():
     )
     parser.add_argument("--dash", action="store_true",
                         help="Full-terminal dashboard with per-project stats")
-    parser.add_argument("--refresh", type=int, default=60,
-                        help="API refresh interval in seconds (default: 60)")
+    parser.add_argument("--refresh", type=int, default=90,
+                        help="API refresh interval in seconds (default: 90)")
     parser.add_argument("--token", type=str, default=None,
                         help="Override OAuth token")
     parser.add_argument("--no-resize", action="store_true",

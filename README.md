@@ -54,7 +54,7 @@ clu --dash --data-dir ~/hpc-sync/.claude
 clu --dash --data-dir ~/hpc-sync/.claude --data-dir ~/server-sync/.claude
 
 # Custom refresh interval
-clu --refresh 60
+clu --refresh 90
 
 # Don't resize the terminal window
 clu --no-resize
@@ -69,7 +69,7 @@ clu --token sk-ant-...
 |------|-------------|
 | `--dash` | Full-terminal dashboard with per-project stats |
 | `--data-dir PATH` | Additional `.claude` data directory (repeatable) |
-| `--refresh N` | API refresh interval in seconds (default: 60) |
+| `--refresh N` | API refresh interval in seconds (default: 90) |
 | `--window N` | Time window for sessions/projects: 5, 15, or 24 hours (default: 5) |
 | `--no-resize` | Don't resize the terminal window |
 | `--token TOKEN` | Override OAuth token |
@@ -108,7 +108,7 @@ If you've used Claude Code at least once, it should just work.
 
 ### v2.2.3
 
-Fix default refresh interval (was 30s, now 60s as documented). Cache last API response to disk so restarts show data immediately and avoid unnecessary 429s.
+Fix default refresh interval (now 90s to avoid API rate limiting). Cache last API response to disk so restarts show data immediately and avoid unnecessary 429s.
 
 ### v2.2.2
 
@@ -143,7 +143,7 @@ Mascot redesign and rate limit handling.
 - **Animated eyes**: mascot blinks with `^ ^` eyes periodically and during bounce animations
 - **Antenna**: cute violet `*|` antenna on top of the mascot
 - **429 rate limit handling**: respects `Retry-After` header from the API with exponential backoff
-- **Default refresh interval**: increased from 30s to 60s to reduce API rate limiting
+- **Default refresh interval**: increased from 30s to 90s to reduce API rate limiting
 
 ### v2.0.0
 

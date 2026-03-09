@@ -61,6 +61,9 @@ clu --no-resize
 
 # Pass a token directly
 clu --token sk-ant-...
+
+# Pass a claude.ai session key (see "Session Key" below)
+clu --session-key sk-ant-sid02-...
 ```
 
 ### Options
@@ -73,6 +76,7 @@ clu --token sk-ant-...
 | `--window N` | Time window for sessions/projects: 5, 15, or 24 hours (default: 5) |
 | `--no-resize` | Don't resize the terminal window |
 | `--token TOKEN` | Override OAuth token |
+| `--session-key KEY` | claude.ai session cookie (or set `CLU_SESSION_KEY` env var) |
 
 ## Using with HPC / Remote Machines
 
@@ -87,6 +91,29 @@ clu --dash --data-dir ~/hpc-sync/.claude
 ```
 
 The API usage (5h/7d windows) is account-level — it shows all usage regardless of where Claude Code runs. The per-project breakdown comes from local JSONL files, so those need to be synced from remote machines.
+
+## How Usage Data is Fetched
+
+As of v2.3.0, Anthropic blocked the OAuth usage endpoint for consumer plans (Max/Pro). clu now fetches usage data from **claude.ai's web API** using your browser session cookie, with the old OAuth API as a fallback.
+
+**Data flow (in priority order):**
+
+1. **claude.ai web API** — uses your `sessionKey` cookie via cloudscraper to bypass Cloudflare. This is what the claude.ai settings page uses internally.
+2. **OAuth API** (legacy fallback) — uses your Claude Code OAuth token. May not work on consumer plans.
+
+### Session Key
+
+clu tries to get the session key automatically from Claude Desktop's cookie store (macOS only, requires one-time Keychain approval). If that doesn't work, you can provide it manually:
+
+1. Go to [claude.ai](https://claude.ai) in Chrome
+2. Open DevTools (Cmd+Option+J) > **Application** tab > **Cookies** > `https://claude.ai`
+3. Copy the `sessionKey` value
+4. Either:
+   - Pass it once: `clu --session-key sk-ant-sid02-...` (gets cached automatically)
+   - Set env var: `export CLU_SESSION_KEY=sk-ant-sid02-...`
+   - Write it to file: `echo 'sk-ant-sid02-...' > ~/.claude/.clu_session_key`
+
+The session key is cached in `~/.claude/.clu_session_key` so you only need to do this once (until it expires).
 
 ## Token Resolution
 
@@ -103,8 +130,23 @@ If you've used Claude Code at least once, it should just work.
 - Python 3.9+
 - `rich` - terminal formatting
 - `requests` - HTTP client
+- `cloudscraper` - Cloudflare bypass for claude.ai API
 
 ## Changelog
+
+### v2.3.0
+
+New data fetching strategy and UI improvements.
+
+- **claude.ai web API**: fetches usage data from claude.ai directly, bypassing the blocked OAuth usage endpoint on consumer plans (Max/Pro)
+- **Auto session key**: extracts the session cookie from Claude Desktop's cookie store on macOS (one-time Keychain approval)
+- **Session key caching**: cached in `~/.claude/.clu_session_key` so restarts are instant
+- **`--session-key` flag**: pass session key via CLI, env var (`CLU_SESSION_KEY`), or dotfile
+- **Cute rotating eyes**: creature cycles through 8 eye styles (◕◕ ●● ◠◠ ◉◉ ◦◦ •• ○○) every 20s
+- **Wider chart bars**: live utilization chart uses 2-char-wide bars for better visibility
+- **Taller chart**: 7 rows instead of 5 for more resolution
+- **Backoff fixes**: `Retry-After: 0` was incorrectly treated as "no header" due to Python falsy check; backoff reset was too aggressive (90s instead of 30s)
+- **cloudscraper dependency**: added for Cloudflare bypass
 
 ### v2.2.3
 

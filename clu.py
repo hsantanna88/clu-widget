@@ -37,6 +37,14 @@ except ImportError:
     print("Missing: pip install rich requests --break-system-packages")
     sys.exit(1)
 
+try:
+    import cloudscraper
+    import logging
+    logging.getLogger("cloudscraper").setLevel(logging.ERROR)
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+except ImportError:
+    cloudscraper = None
+
 from rich.console import Console, Group
 from rich.live import Live
 from rich.table import Table
@@ -557,8 +565,123 @@ def _save_cached_usage(data):
     except Exception:
         pass
 
+_SESSION_KEY_FILE = Path.home() / ".claude" / ".clu_session_key"
+
+def _get_session_key():
+    """Get sessionKey: file cache → Claude Desktop cookies → None."""
+    # Check file cache first
+    try:
+        if _SESSION_KEY_FILE.exists():
+            sk = _SESSION_KEY_FILE.read_text().strip()
+            if sk:
+                return sk
+    except Exception:
+        pass
+
+    # Try decrypting from Claude Desktop cookie store
+    sk = _decrypt_session_key()
+    if sk:
+        # Cache it so we don't need keychain access again
+        try:
+            _SESSION_KEY_FILE.write_text(sk)
+            _SESSION_KEY_FILE.chmod(0o600)
+        except Exception:
+            pass
+    return sk
+
+def _decrypt_session_key():
+    """Extract sessionKey from Claude Desktop's encrypted cookie store."""
+    try:
+        cookie_db = Path.home() / "Library" / "Application Support" / "Claude" / "Cookies"
+        if not cookie_db.exists():
+            return None
+        import sqlite3, shutil, tempfile, hashlib
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.backends import default_backend
+
+        key_password = subprocess.check_output(
+            ["security", "find-generic-password", "-s", "Claude Safe Storage", "-a", "Claude Key", "-w"],
+            stderr=subprocess.DEVNULL, timeout=5,
+        ).decode().strip()
+
+        derived_key = hashlib.pbkdf2_hmac("sha1", key_password.encode("utf-8"), b"saltysalt", 1003, dklen=16)
+
+        tmp = tempfile.mktemp(suffix=".db")
+        shutil.copy2(str(cookie_db), tmp)
+        conn = sqlite3.connect(tmp)
+        cur = conn.cursor()
+        cur.execute("SELECT encrypted_value FROM cookies WHERE name='sessionKey' AND host_key LIKE '%claude%'")
+        row = cur.fetchone()
+        conn.close()
+        os.unlink(tmp)
+
+        if row and row[0][:3] == b"v10":
+            enc_data = row[0][3:]
+            iv = b" " * 16
+            cipher = Cipher(algorithms.AES(derived_key), modes.CBC(iv), backend=default_backend())
+            decryptor = cipher.decryptor()
+            decrypted = decryptor.update(enc_data) + decryptor.finalize()
+            pad_len = decrypted[-1]
+            return decrypted[:-pad_len].decode("utf-8")
+    except Exception:
+        pass
+    return None
+
+def _get_org_id(token):
+    """Get organization UUID from the OAuth profile endpoint."""
+    try:
+        resp = requests.get(
+            "https://api.anthropic.com/api/oauth/profile",
+            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("organization", {}).get("uuid")
+    except Exception:
+        pass
+    return None
+
+# Cached scraper and org_id to avoid re-creating on every fetch
+_scraper = None
+_org_id = None
+
 def fetch_usage(token):
-    """Hit Anthropic's oauth/usage endpoint. Returns dict or raises."""
+    """Fetch usage from claude.ai web API via session cookie, with OAuth API fallback."""
+    global _scraper, _org_id
+
+    # ── Strategy 1: claude.ai web API (session cookie + cloudscraper) ────
+    if cloudscraper:
+        if _org_id is None:
+            _org_id = _get_org_id(token) or os.environ.get("CLU_ORG_ID")
+        if _org_id:
+            if _scraper is None:
+                _scraper = cloudscraper.create_scraper()
+                # Try session key from env, then from Claude Desktop cookies
+                sk = os.environ.get("CLU_SESSION_KEY") or _get_session_key()
+                if sk:
+                    _scraper.cookies.set("sessionKey", sk, domain=".claude.ai")
+            if _scraper.cookies.get("sessionKey"):
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    resp = _scraper.get(
+                        f"https://claude.ai/api/organizations/{_org_id}/usage",
+                        timeout=10,
+                    )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    _save_cached_usage(data)
+                    return data
+                elif resp.status_code == 429:
+                    retry_after = resp.headers.get("Retry-After") or resp.headers.get("retry-after")
+                    secs = int(retry_after) if retry_after and retry_after.isdigit() else None
+                    raise RateLimited(secs)
+                elif resp.status_code in (401, 403):
+                    # Session expired — clear cookie so we re-fetch next time
+                    _scraper.cookies.clear()
+                    _scraper = None
+
+    # ── Strategy 2: OAuth API (legacy, may be blocked on consumer plans) ─
     resp = requests.get(
         "https://api.anthropic.com/api/oauth/usage",
         headers={
@@ -1351,6 +1474,7 @@ def _setup_terminal(dash=False):
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
 REFRESH_SECS = 90
+_INITIAL_BACKOFF = 30
 
 def main():
     global REFRESH_SECS
@@ -1369,6 +1493,8 @@ def main():
                         help="API refresh interval in seconds (default: 90)")
     parser.add_argument("--token", type=str, default=None,
                         help="Override OAuth token")
+    parser.add_argument("--session-key", type=str, default=None,
+                        help="claude.ai sessionKey cookie (or set CLU_SESSION_KEY env var)")
     parser.add_argument("--no-resize", action="store_true",
                         help="Don't resize the terminal window")
     parser.add_argument("--window", type=int, default=5, choices=[5, 15, 24],
@@ -1381,6 +1507,8 @@ def main():
     REFRESH_SECS = args.refresh
     if args.token:
         os.environ["CLAUDE_TOKEN"] = args.token
+    if args.session_key:
+        os.environ["CLU_SESSION_KEY"] = args.session_key
 
     data_dirs = [Path.home() / ".claude"]
     data_dirs_info = ["~/.claude (local)"]
@@ -1438,7 +1566,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
         local_data = parse_project_data(data_dirs)
         history = UsageHistory(max_samples=60)
         next_fetch = _initial_fetch_time(api_data)
-        backoff = 5
+        backoff = _INITIAL_BACKOFF
         next_local_refresh = time.time() + 300
 
         with Live(
@@ -1456,13 +1584,17 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         error_msg = None
                         last_ok   = datetime.now().strftime("%H:%M:%S")
                         next_fetch = now_ts + REFRESH_SECS
-                        backoff = REFRESH_SECS
+                        backoff = _INITIAL_BACKOFF
                         # Record sample for live chart
                         history.record(api_data)
                     except RateLimited as e:
-                        wait = e.retry_after or min(backoff * 2, 120)
-                        backoff = wait
-                        next_fetch = now_ts + wait
+                        if e.retry_after is not None:
+                            wait = max(e.retry_after, 2)
+                            backoff = _INITIAL_BACKOFF
+                        else:
+                            wait = min(backoff * 2, REFRESH_SECS)
+                            backoff = wait
+                        next_fetch = now_ts + wait + random.uniform(0, 3)
                         error_msg = "rate limited"
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"
@@ -1502,7 +1634,7 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
             sys.stdout.flush()
 
         next_fetch = _initial_fetch_time(api_data)
-        backoff = 5
+        backoff = _INITIAL_BACKOFF
 
         with Live(make_widget(api_data, last_ok, error_msg, tick),
                   console=console,
@@ -1517,11 +1649,15 @@ def _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_d
                         error_msg = None
                         last_ok   = datetime.now().strftime("%H:%M:%S")
                         next_fetch = now_ts + REFRESH_SECS
-                        backoff = REFRESH_SECS
+                        backoff = _INITIAL_BACKOFF
                     except RateLimited as e:
-                        wait = e.retry_after or min(backoff * 2, 120)
-                        backoff = wait
-                        next_fetch = now_ts + wait
+                        if e.retry_after is not None:
+                            wait = max(e.retry_after, 2)
+                            backoff = _INITIAL_BACKOFF
+                        else:
+                            wait = min(backoff * 2, REFRESH_SECS)
+                            backoff = wait
+                        next_fetch = now_ts + wait + random.uniform(0, 3)
                         error_msg = "rate limited"
                     except requests.HTTPError as e:
                         error_msg = f"HTTP {e.response.status_code}"

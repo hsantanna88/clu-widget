@@ -8,7 +8,7 @@ version = "2.3.1"
 description = "Claude Usage Monitor — terminal widget and dashboard for tracking Claude Code usage"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.9"
+requires-python = ">=3.9"  # python 3.9+
 authors = [
     { name = "H. Santanna" },
 ]

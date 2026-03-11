@@ -3,10 +3,18 @@
 A terminal tool that monitors your Claude Code usage — from a cute animated widget to a full per-project dashboard.
 
 [![PyPI version](https://img.shields.io/pypi/v/clu-widget?color=orange)](https://pypi.org/project/clu-widget/)
-![Python 3.9+](https://img.shields.io/badge/python-3.9+-3776ab)
+![Python 3.9+](https://img.shields.io/badge/python-3.9+-8b5cf6)
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/hsantanna.clu?color=007acc&label=vscode)](https://marketplace.visualstudio.com/items?itemName=hsantanna.clu)
 
 ![clu dashboard](screenshot.png)
+
+## VS Code Extension
+
+Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=hsantanna.clu) — usage in your status bar, click for the full dashboard.
+
+![clu VS Code dashboard](screenshot-vscode.png)
+
+![clu status bar](screenshot-statusbar.png)
 
 ## What it does
 

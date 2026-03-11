@@ -4,7 +4,7 @@ A terminal tool that monitors your Claude Code usage — from a cute animated wi
 
 [![PyPI version](https://img.shields.io/pypi/v/clu-widget?color=orange)](https://pypi.org/project/clu-widget/)
 ![Python 3.9+](https://img.shields.io/badge/python-3.9+-8b5cf6)
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/hsantanna.clu?color=007acc&label=vscode)](https://marketplace.visualstudio.com/items?itemName=hsantanna.clu)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/hsantanna.clu?color=007acc&label=vscode&cacheSeconds=3600)](https://marketplace.visualstudio.com/items?itemName=hsantanna.clu)
 
 ![clu dashboard](screenshot.png)
 

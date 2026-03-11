@@ -1,0 +1,65 @@
+{
+  "name": "clu",
+  "displayName": "clu — Claude Usage Monitor",
+  "description": "Real-time Claude Code token usage in your status bar + dashboard panel",
+  "version": "1.0.0",
+  "publisher": "hsantanna",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hsantanna88/clu-widget"
+  },
+  "homepage": "https://github.com/hsantanna88/clu-widget",
+  "bugs": {
+    "url": "https://github.com/hsantanna88/clu-widget/issues"
+  },
+  "engines": { "vscode": "^1.85.0" },
+  "icon": "icon.png",
+  "categories": ["Other"],
+  "keywords": ["claude", "anthropic", "usage", "monitor", "ai", "widget"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "clu.refresh",
+        "title": "clu: Refresh Usage Now"
+      },
+      {
+        "command": "clu.openDashboard",
+        "title": "clu: Open Dashboard"
+      }
+    ],
+    "configuration": {
+      "title": "clu",
+      "properties": {
+        "clu.sessionKey": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your `sessionKey` cookie from claude.ai. Leave blank to auto-detect from `CLU_SESSION_KEY` env or `~/.claude/.clu_session_key` file."
+        },
+        "clu.orgId": {
+          "type": "string",
+          "default": "",
+          "description": "Your Anthropic org UUID. Leave blank to auto-fetch from the OAuth profile endpoint."
+        },
+        "clu.refreshInterval": {
+          "type": "number",
+          "default": 90,
+          "minimum": 30,
+          "description": "Refresh interval in seconds (minimum 30, default 90)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

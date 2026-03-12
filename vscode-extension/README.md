@@ -56,7 +56,7 @@ The session key is cached in `~/.claude/.clu_session_key` so you only need to do
 
 ## Notes
 
-- Shares the disk cache (`~/.claude/.clu_cache.json`) with the [clu terminal widget](https://github.com/hsantanna88/clu-widget), so both tools stay in sync
+- Shares the disk cache (`~/.claude/.clu_cache.json`) with the [clu terminal widget](https://github.com/hugosantanna/clu-widget), so both tools stay in sync
 - The OAuth usage API may be blocked on consumer plans (Max/Pro) — the claude.ai session key is the recommended auth method
 
 ## License

@@ -1503,6 +1503,10 @@ def main():
     parser.add_argument("--data-dir", type=str, action="append", default=None,
                         help="Additional .claude data directory (e.g. synced from HPC). "
                              "Can be specified multiple times.")
+    parser.add_argument("--serve", action="store_true",
+                        help="Run a local JSON server for the M5StickC hardware widget")
+    parser.add_argument("--port", type=int, default=8765,
+                        help="Port for --serve mode (default: 8765)")
     args = parser.parse_args()
 
     REFRESH_SECS = args.refresh
@@ -1545,10 +1549,102 @@ def main():
         ))
         sys.exit(1)
 
+    if args.serve:
+        try:
+            _serve_mode(token, args.port, args.refresh)
+        except KeyboardInterrupt:
+            pass
+        return
+
     try:
         _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_dirs_info)
     except KeyboardInterrupt:
         _cleanup()
+
+def _secs_until(iso_str):
+    """Return seconds until an ISO timestamp, or None."""
+    if not iso_str or not isinstance(iso_str, str):
+        return None
+    try:
+        target = datetime.fromisoformat(iso_str)
+        if target.tzinfo is None:
+            target = target.replace(tzinfo=timezone.utc)
+        return max(0, int((target - datetime.now(timezone.utc)).total_seconds()))
+    except Exception:
+        return None
+
+
+def _serve_mode(token, port=8765, refresh_secs=90):
+    """Serve live usage JSON for the M5StickC hardware widget."""
+    import threading
+    import socket
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    state = {"data": _load_cached_usage(), "error": None}
+
+    def _payload():
+        data = state["data"]
+        if not data:
+            return {"error": state["error"] or "no data yet"}
+        fh = data.get("five_hour") or data.get("fiveHour") or {}
+        sd = data.get("seven_day") or data.get("sevenDay") or {}
+        fh_pct = fh.get("utilization")
+        sd_pct = sd.get("utilization")
+        fh_reset_iso = fh.get("resets_at")
+        sd_reset_iso = sd.get("resets_at")
+        tokens_5h = (fh.get("input_tokens") or 0) + (fh.get("output_tokens") or 0)
+        return {
+            "pct_5h":        fh_pct,
+            "pct_7d":        sd_pct,
+            "reset_5h_secs": _secs_until(fh_reset_iso),
+            "reset_7d_secs": _secs_until(sd_reset_iso),
+            "tokens_5h":     tokens_5h,
+            "error":         state["error"],
+        }
+
+    def _fetch_loop():
+        backoff = _INITIAL_BACKOFF
+        while True:
+            try:
+                state["data"]  = fetch_usage(token)
+                state["error"] = None
+                backoff        = _INITIAL_BACKOFF
+            except RateLimited as e:
+                wait = e.retry_after or min(backoff * 2, refresh_secs)
+                backoff = wait
+                state["error"] = f"rate limited ({int(wait)}s)"
+            except Exception as e:
+                state["error"] = str(e)[:60]
+            time.sleep(refresh_secs)
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == "/api":
+                body = json.dumps(_payload()).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", len(body))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, *args):
+            pass  # silence access log
+
+    threading.Thread(target=_fetch_loop, daemon=True).start()
+
+    server = HTTPServer(("0.0.0.0", port), Handler)
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+    except Exception:
+        local_ip = "your-mac-ip"
+    print(f"clu serve · http://{local_ip}:{port}/api")
+    print(f"Set SERVER_IP to {local_ip} in clu_hardware.ino")
+    print(f"Ctrl+C to stop")
+    server.serve_forever()
+
 
 def _initial_fetch_time(api_data):
     """If we have cached data, delay first fetch to avoid 429."""

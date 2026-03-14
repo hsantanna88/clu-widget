@@ -42,7 +42,7 @@ Install from the [VS Code Marketplace](https://marketplace.visualstudio.com/item
 pip install clu-widget
 
 # Or install from source
-git clone https://github.com/hsantanna/clu.git
+git clone https://github.com/hugosantanna/clu-widget.git
 cd clu
 pip install .
 ```
@@ -112,17 +112,34 @@ As of v2.3.0, Anthropic blocked the OAuth usage endpoint for consumer plans (Max
 
 ### Session Key
 
-clu tries to get the session key automatically from Claude Desktop's cookie store (macOS only, requires one-time Keychain approval). If that doesn't work, you can provide it manually:
+clu tries to get the session key automatically from Claude Desktop's cookie store:
 
-1. Go to [claude.ai](https://claude.ai) in Chrome
-2. Open DevTools (Cmd+Option+J) > **Application** tab > **Cookies** > `https://claude.ai`
-3. Copy the `sessionKey` value
-4. Either:
-   - Pass it once: `clu --session-key sk-ant-sid02-...` (gets cached automatically)
-   - Set env var: `export CLU_SESSION_KEY=sk-ant-sid02-...`
-   - Write it to file: `echo 'sk-ant-sid02-...' > ~/.claude/.clu_session_key`
+- **macOS**: reads from Keychain (one-time approval prompt)
+- **Windows**: decrypts via DPAPI from `%APPDATA%/Claude/`
+- **Linux**: reads from Secret Service (GNOME Keyring / KDE Wallet) with Chromium fallback
 
-The session key is cached in `~/.claude/.clu_session_key` so you only need to do this once (until it expires).
+If Claude Desktop is installed and you've logged in, this happens automatically. If auto-discovery doesn't work, clu will prompt you interactively on first run:
+
+```
+  ◆ Session key needed
+
+  clu needs your claude.ai session cookie to fetch usage data.
+  This is a one-time setup — the key is cached locally.
+
+  How to get it:
+  1. Open claude.ai in your browser
+  2. DevTools (F12) → Application → Cookies → claude.ai
+  3. Copy the sessionKey value
+
+  Paste session key (or Enter to skip):
+```
+
+You can also provide it manually:
+- Pass it once: `clu --session-key sk-ant-sid02-...` (gets cached automatically)
+- Set env var: `export CLU_SESSION_KEY=sk-ant-sid02-...`
+- Write it to file: `echo 'sk-ant-sid02-...' > ~/.claude/.clu_session_key`
+
+The session key is cached in `~/.claude/.clu_session_key` (permissions `0600`) so you only need to do this once (until it expires).
 
 ## Token Resolution
 
@@ -130,9 +147,9 @@ The session key is cached in `~/.claude/.clu_session_key` so you only need to do
 
 1. `CLAUDE_TOKEN` environment variable
 2. macOS Keychain (multiple known service names)
-3. Credential JSON files (`~/.claude/.credentials.json`, etc.)
+3. Credential JSON files (`~/.claude/.credentials.json`, `~/.config/claude/credentials.json`, etc.)
 
-If you've used Claude Code at least once, it should just work.
+If you've used Claude Code at least once, it should just work. On Windows and Linux, token discovery uses the credential file paths (step 3).
 
 ## Requirements
 
@@ -140,8 +157,21 @@ If you've used Claude Code at least once, it should just work.
 - `rich` - terminal formatting
 - `requests` - HTTP client
 - `cloudscraper` - Cloudflare bypass for claude.ai API
+- `cryptography` - for auto-discovering session key from Claude Desktop (optional, installed with cloudscraper)
+- `secretstorage` - for Linux keyring access (optional, install with `pip install secretstorage`)
 
 ## Changelog
+
+### v2.4.0
+
+Cross-platform session key discovery, interactive setup, and security hardening.
+
+- **Windows support**: auto-discovers sessionKey from Claude Desktop's cookie store via DPAPI + AES-256-GCM
+- **Linux support**: auto-discovers sessionKey via Secret Service (GNOME Keyring) with Chromium `peanuts` fallback + AES-128-CBC
+- **Interactive setup**: if no session key is found, clu prompts you to paste it on first run (one-time, cached locally)
+- **Security — tempfile race condition**: replaced `tempfile.mktemp()` with `tempfile.mkstemp()` to prevent symlink attacks
+- **Security — file permissions**: cache file (`~/.claude/.clu_cache.json`) now created with `0600` permissions, matching the session key file
+- **Fixed git clone URL**: README now points to the correct repository
 
 ### v2.3.0
 

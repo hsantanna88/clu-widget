@@ -562,6 +562,7 @@ def _save_cached_usage(data):
         cache = dict(data)
         cache["_cached_at"] = time.time()
         _CACHE_FILE.write_text(json.dumps(cache))
+        _CACHE_FILE.chmod(0o600)
     except Exception:
         pass
 
@@ -591,6 +592,16 @@ def _get_session_key():
 
 def _decrypt_session_key():
     """Extract sessionKey from Claude Desktop's encrypted cookie store."""
+    if sys.platform == "darwin":
+        return _decrypt_session_key_macos()
+    elif sys.platform == "win32":
+        return _decrypt_session_key_windows()
+    elif sys.platform.startswith("linux"):
+        return _decrypt_session_key_linux()
+    return None
+
+def _decrypt_session_key_macos():
+    """macOS: Keychain + AES-128-CBC."""
     try:
         cookie_db = Path.home() / "Library" / "Application Support" / "Claude" / "Cookies"
         if not cookie_db.exists():
@@ -606,7 +617,8 @@ def _decrypt_session_key():
 
         derived_key = hashlib.pbkdf2_hmac("sha1", key_password.encode("utf-8"), b"saltysalt", 1003, dklen=16)
 
-        tmp = tempfile.mktemp(suffix=".db")
+        fd, tmp = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
         shutil.copy2(str(cookie_db), tmp)
         conn = sqlite3.connect(tmp)
         cur = conn.cursor()
@@ -626,6 +638,192 @@ def _decrypt_session_key():
     except Exception:
         pass
     return None
+
+def _decrypt_session_key_windows():
+    """Windows: DPAPI master key + AES-256-GCM."""
+    try:
+        import ctypes, ctypes.wintypes
+        import sqlite3, shutil, tempfile, base64
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+        app_data = os.environ.get("APPDATA", "")
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+
+        # Find cookie database
+        cookie_db = None
+        for p in [
+            Path(app_data) / "Claude" / "Cookies",
+            Path(local_app_data) / "Claude" / "Cookies",
+            Path(app_data) / "Claude" / "User Data" / "Default" / "Cookies",
+        ]:
+            if p.exists():
+                cookie_db = p
+                break
+        if not cookie_db:
+            return None
+
+        # Read master key from Local State
+        local_state = None
+        for p in [
+            Path(app_data) / "Claude" / "Local State",
+            Path(local_app_data) / "Claude" / "Local State",
+        ]:
+            if p.exists():
+                local_state = p
+                break
+        if not local_state:
+            return None
+
+        with open(local_state, "r") as f:
+            encrypted_key_b64 = json.load(f)["os_crypt"]["encrypted_key"]
+        encrypted_key = base64.b64decode(encrypted_key_b64)[5:]  # strip "DPAPI" prefix
+
+        # Decrypt master key with DPAPI
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [("cbData", ctypes.wintypes.DWORD),
+                        ("pbData", ctypes.POINTER(ctypes.c_char))]
+
+        blob_in = DATA_BLOB(len(encrypted_key),
+                            ctypes.create_string_buffer(encrypted_key, len(encrypted_key)))
+        blob_out = DATA_BLOB()
+        if not ctypes.windll.crypt32.CryptUnprotectData(
+            ctypes.byref(blob_in), None, None, None, None, 0, ctypes.byref(blob_out)
+        ):
+            return None
+        master_key = ctypes.string_at(blob_out.pbData, blob_out.cbData)
+        ctypes.windll.kernel32.LocalFree(blob_out.pbData)
+
+        # Read cookie from database
+        fd, tmp = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        shutil.copy2(str(cookie_db), tmp)
+        conn = sqlite3.connect(tmp)
+        cur = conn.cursor()
+        cur.execute("SELECT encrypted_value FROM cookies WHERE name='sessionKey' AND host_key LIKE '%claude%'")
+        row = cur.fetchone()
+        conn.close()
+        os.unlink(tmp)
+
+        if row and row[0][:3] == b"v10":
+            nonce = row[0][3:15]       # 12-byte nonce
+            ciphertext = row[0][15:]   # ciphertext + 16-byte GCM tag
+            decrypted = AESGCM(master_key).decrypt(nonce, ciphertext, None)
+            return decrypted.decode("utf-8")
+    except Exception:
+        pass
+    return None
+
+def _decrypt_session_key_linux():
+    """Linux: Secret Service (or 'peanuts' fallback) + AES-128-CBC."""
+    try:
+        import sqlite3, shutil, tempfile, hashlib
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.backends import default_backend
+
+        # Find cookie database
+        config = Path.home() / ".config"
+        cookie_db = None
+        for p in [
+            config / "Claude" / "Cookies",
+            config / "claude-desktop" / "Cookies",
+            config / "Claude" / "Default" / "Cookies",
+        ]:
+            if p.exists():
+                cookie_db = p
+                break
+        if not cookie_db:
+            return None
+
+        # Get encryption password from Secret Service, fall back to Chromium default
+        key_password = "peanuts"
+        try:
+            import secretstorage
+            bus = secretstorage.dbus_init()
+            collection = secretstorage.get_default_collection(bus)
+            if collection.is_locked():
+                collection.unlock()
+            for item in collection.get_all_items():
+                if item.get_label() == "Claude Safe Storage":
+                    key_password = item.get_secret().decode("utf-8")
+                    break
+        except Exception:
+            pass
+
+        # Linux uses 1 PBKDF2 iteration (vs 1003 on macOS)
+        derived_key = hashlib.pbkdf2_hmac("sha1", key_password.encode("utf-8"), b"saltysalt", 1, dklen=16)
+
+        # Read cookie from database
+        fd, tmp = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        shutil.copy2(str(cookie_db), tmp)
+        conn = sqlite3.connect(tmp)
+        cur = conn.cursor()
+        cur.execute("SELECT encrypted_value FROM cookies WHERE name='sessionKey' AND host_key LIKE '%claude%'")
+        row = cur.fetchone()
+        conn.close()
+        os.unlink(tmp)
+
+        if row and row[0][:3] in (b"v10", b"v11"):
+            enc_data = row[0][3:]
+            iv = b" " * 16
+            cipher = Cipher(algorithms.AES(derived_key), modes.CBC(iv), backend=default_backend())
+            decryptor = cipher.decryptor()
+            decrypted = decryptor.update(enc_data) + decryptor.finalize()
+            pad_len = decrypted[-1]
+            return decrypted[:-pad_len].decode("utf-8")
+    except Exception:
+        pass
+    return None
+
+def _ensure_session_key():
+    """Ensure session key is available, prompting interactively if needed."""
+    # Already have one cached?
+    try:
+        if _SESSION_KEY_FILE.exists() and _SESSION_KEY_FILE.read_text().strip():
+            return
+    except Exception:
+        pass
+
+    # Try auto-discovery from Claude Desktop cookies
+    sk = _decrypt_session_key()
+    if sk:
+        try:
+            _SESSION_KEY_FILE.write_text(sk)
+            _SESSION_KEY_FILE.chmod(0o600)
+        except Exception:
+            pass
+        return
+
+    # Interactive prompt (only if running in a terminal)
+    if not sys.stdin.isatty():
+        return
+
+    console = Console(highlight=False)
+    console.print()
+    console.print(Text.from_markup(
+        f"  [{AMBER}]◆[/] [{WHITE}]Session key needed[/]\n\n"
+        f"  clu needs your claude.ai session cookie to fetch usage data.\n"
+        f"  This is a one-time setup — the key is cached locally.\n\n"
+        f"  [{CYAN}]How to get it:[/]\n"
+        f"  1. Open [{CYAN}]claude.ai[/] in your browser\n"
+        f"  2. DevTools (F12) → [{CYAN}]Application[/] → [{CYAN}]Cookies[/] → claude.ai\n"
+        f"  3. Copy the [{CYAN}]sessionKey[/] value\n"
+    ))
+    try:
+        sk = input("  Paste session key (or Enter to skip): ").strip()
+        if sk and len(sk) > 20:
+            try:
+                _SESSION_KEY_FILE.write_text(sk)
+                _SESSION_KEY_FILE.chmod(0o600)
+            except Exception:
+                pass
+            console.print(Text.from_markup(f"\n  [{GREEN}]✓[/] Saved to ~/.claude/.clu_session_key\n"))
+        else:
+            console.print(Text.from_markup(
+                f"\n  [{MUTED}]Skipped — set CLU_SESSION_KEY env var or use --session-key later[/]\n"
+            ))
+    except (EOFError, KeyboardInterrupt):
+        console.print()
 
 def _get_org_id(token):
     """Get organization UUID from the OAuth profile endpoint."""
@@ -1555,6 +1753,10 @@ def main():
         except KeyboardInterrupt:
             pass
         return
+
+    # Ensure session key for claude.ai API (one-time interactive setup)
+    if not args.session_key and not os.environ.get("CLU_SESSION_KEY"):
+        _ensure_session_key()
 
     try:
         _run_loop(args, token, api_data, last_ok, error_msg, tick, data_dirs, data_dirs_info)

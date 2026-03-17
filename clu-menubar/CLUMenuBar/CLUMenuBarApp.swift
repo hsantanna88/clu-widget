@@ -221,7 +221,10 @@ struct WindowChartView: View {
     }
 
     private var usagePoints: [(date: Date, pct: Double)] {
-        history.map { ($0.date, $0[keyPath: keyPath]) }
+        // Only show samples from the current window — filter out previous cycles
+        history
+            .filter { $0.date >= windowStart && $0.date <= windowEnd }
+            .map { ($0.date, $0[keyPath: keyPath]) }
     }
 
     /// Human-readable time format for x-axis depending on window size

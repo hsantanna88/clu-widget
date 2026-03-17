@@ -2350,9 +2350,8 @@ def _serve_mode(token, port=8765, refresh_secs=90):
         # Plan
         plan = data.get("plan") or data.get("subscription_type") or ""
 
-        # History for charts (last 6h of samples)
-        cutoff_6h = time.time() - 6 * 3600
-        recent_history = [s for s in history if s.get("ts", 0) >= cutoff_6h]
+        # Full history for charts (up to 30 days — let clients filter per window)
+        recent_history = history
 
         # Per-model breakdown from API response
         models = {}

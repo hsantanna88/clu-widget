@@ -2817,6 +2817,7 @@ def _tray_rumps(token, refresh_secs):
 
             return self
 
+        @objc.python_method
         def _label(self, text, x, y, w, h, font, color):
             lbl = NSTextField.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
             lbl.setStringValue_(text)
@@ -2829,6 +2830,7 @@ def _tray_rumps(token, refresh_secs):
             self.addSubview_(lbl)
             return lbl
 
+        @objc.python_method
         def _button(self, title, x, y, w, h, action):
             btn = NSButton.alloc().initWithFrame_(NSMakeRect(x, y, w, h))
             btn.setTitle_(title)
@@ -2842,6 +2844,7 @@ def _tray_rumps(token, refresh_secs):
             hex_to_ns("#111827").set()
             NSBezierPath.fillRect_(rect)
 
+        @objc.python_method
         def refresh_data(self):
             with state_lock:
                 data = state.get("data")
@@ -2910,6 +2913,7 @@ def _tray_rumps(token, refresh_secs):
                 5.0, self, "refreshUI:", None, True)
             self._update_ui()
 
+        @objc.python_method
         def _fetch_loop(self):
             do_fetch()
             while True:
@@ -2939,6 +2943,7 @@ def _tray_rumps(token, refresh_secs):
         def quit_(self, sender):
             NSApp.terminate_(None)
 
+        @objc.python_method
         def _update_ui(self):
             with state_lock:
                 data = state.get("data")

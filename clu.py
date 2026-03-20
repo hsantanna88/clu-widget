@@ -2611,13 +2611,17 @@ def _tray_mode(token, refresh_secs):
                 subprocess.Popen(["open", str(candidate)])
                 print(f"Launched {candidate.name}")
                 return
-        # Fallback to PyObjC popover
-        try:
-            import objc  # noqa: F401
-            import AppKit  # noqa: F401
-            return _tray_rumps(token, refresh_secs)
-        except ImportError:
-            pass
+        # No native app found — tell the user how to get it
+        print("Native menu bar app (CLUMenuBar.app) not found.")
+        print("Searched: ./clu-menubar/, ~/Applications/, /Applications/")
+        print()
+        print("To install it:")
+        print("  1. Open clu-menubar/CLUMenuBar.xcodeproj in Xcode")
+        print("  2. Build & Run (Cmd+R), or archive and export the .app")
+        print("  3. Copy CLUMenuBar.app to ~/Applications/")
+        print()
+        print("Then run:  clu --serve  (in background)  +  clu --tray")
+        sys.exit(1)
     try:
         import pystray  # noqa: F401
         from PIL import Image  # noqa: F401

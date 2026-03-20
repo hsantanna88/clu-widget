@@ -387,6 +387,13 @@ def _check_promo_schedule():
     except Exception:
         pass
 
+    # Get current ET time (used by both checks)
+    try:
+        import zoneinfo
+        et = datetime.now(zoneinfo.ZoneInfo("America/New_York"))
+    except Exception:
+        et = datetime.now(timezone(timedelta(hours=-5)))
+
     # Try fetching from isclaude2x.com
     active = False
     label = ""
@@ -394,29 +401,51 @@ def _check_promo_schedule():
         resp = requests.get("https://isclaude2x.com/", timeout=5)
         if resp.status_code == 200:
             text = resp.text.lower()
-            if "yes" in text[:500] or "2x" in text[:500] or "active" in text[:500]:
+            # Look for a date range that includes today
+            import re
+            # Match "march 13–27, 2026" style ranges
+            range_match = re.search(r'(\w+ \d+)\s*[–-]\s*(\d+),?\s*(\d{4})', text)
+            if range_match:
+                try:
+                    end_day = int(range_match.group(2))
+                    year = int(range_match.group(3))
+                    start_str = f"{range_match.group(1)} {year}"
+                    from dateutil.parser import parse as dateparse
+                    start_dt = dateparse(start_str)
+                    end_dt = start_dt.replace(day=end_day, hour=23, minute=59)
+                    now_naive = et.replace(tzinfo=None)
+                    if start_dt <= now_naive <= end_dt:
+                        active = True  # within promo date range
+                except Exception:
+                    pass
+            # If no date range but page explicitly says it's active now
+            if not active and ("currently active" in text or "is active" in text):
                 active = True
-                label = "2x PROMO"
     except Exception:
         pass
 
-    # Fallback: schedule-based detection (March 2026 promo pattern)
+    # Fallback: schedule-based detection (March 13-27, 2026 promo)
+    # If isclaude2x.com failed or didn't confirm, check known schedule
     if not active:
-        try:
-            import zoneinfo
-            et = datetime.now(zoneinfo.ZoneInfo("America/New_York"))
-        except Exception:
-            et = datetime.now(timezone(timedelta(hours=-5)))
+        promo_start = datetime(2026, 3, 13)
+        promo_end   = datetime(2026, 3, 27, 23, 59, 59)
+        now_naive = et.replace(tzinfo=None)
+        if promo_start <= now_naive <= promo_end:
+            active = True  # within known promo date range
+
+    # Apply time-of-day schedule within active promo period
+    # 2x is OFF-PEAK: weekdays outside 8AM-2PM ET, all day weekends
+    if active:
         weekday = et.weekday()  # 0=Mon, 6=Sun
         hour = et.hour
-        # Weekends: all day 2x
         if weekday >= 5:
-            active = True
             label = "2x WEEKEND"
-        # Weekdays: 8 AM - 2 PM ET
-        elif 8 <= hour < 14:
-            active = True
-            label = "2x PROMO"
+        elif hour < 8 or hour >= 14:
+            label = "2x OFF-PEAK"
+        else:
+            # Peak hours (8AM-2PM ET) — no 2x
+            active = False
+            label = ""
 
     # Cache result
     try:

@@ -9,3 +9,5 @@ build/
 .venv/
 venv/
 .DS_Store
+clu_hardware/src/credentials.h
+clu_hardware/.pio/

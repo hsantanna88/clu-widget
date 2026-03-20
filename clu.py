@@ -2687,13 +2687,7 @@ def _tray_rumps(token, refresh_secs):
                 p.lineToPoint_(NSPoint(w - pad_r, y))
                 p.setLineWidth_(0.5)
                 p.stroke()
-                # Y-axis label
-                hex_to_ns("#555577").set()
-                s = f"{pct}%"
-                attrs = {
-                    objc.lookUpClass("NSFontAttributeName"): NSFont.monospacedSystemFontOfSize_weight_(8, 0.0),
-                    objc.lookUpClass("NSForegroundColorAttributeName"): hex_to_ns("#555577"),
-                }
+                # Y-axis labels omitted (PyObjC text attrs need AppKit constants)
 
             with state_lock:
                 history = list(state.get("history", []))
